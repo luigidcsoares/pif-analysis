@@ -109,7 +109,7 @@ def prepare_qif(pi, C):
     Transform the prior pi and channel C into the format
     required by Kostas' QIF library (i.e. without keys)
     '''
-    return list(pi.values()), C.values,
+    return list(pi.values()), C.values
 
 
 def bayes_cells(df, channel, prior):
@@ -187,7 +187,7 @@ figs
 : ['gender', 'AGE', 'POSTCODE', 'blood_group', 'eye_color', 'job']
 
 #+begin_src jupyter-python :session py-qif :kernel python3.10-qif
-x = df.coumns
+x = df.columns
 y = [figs[secret] for secret in df.columns]
 
 fig, ax = plt.subplots()
@@ -543,3 +543,97 @@ secret. Couldn't the change be negative, thus indicating that the risk reduced?
 We know that Bayes vuln. can also decrease when we look at the inners individually
 (dynamic view), but posterior Bayes vuln. can never decrease. What would be the
 'posterior' version of CSF? How to combine the CSFs? Would that help?
+
+Furthermore, it could be that the probability of an element decreases and the corresponding
+CSF is the same of a cel whose element's probability increased. What does that mean?
+The individual whose cell's probability decreased is at the same risk as the one whose
+cell's probability increased???
+
+Let's see an example. Consider the following dataset:
+
+#+begin_src jupyter-python :session py-qif :kernel python3.10-qif
+df_ab = pd.DataFrame({
+    'A': ['a1'] * 4 + ['a2'] * 4,
+    'B': ['b1'] * 3 + ['b2'] * 4 + ['b1']
+})
+
+df_ab
+#+end_src
+
+#+RESULTS:
+:     A   B
+: 0  a1  b1
+: 1  a1  b1
+: 2  a1  b1
+: 3  a1  b2
+: 4  a2  b2
+: 5  a2  b2
+: 6  a2  b2
+: 7  a2  b1
+
+The cell surprise factors are exactly the same for every cell:
+
+#+begin_src jupyter-python :session py-qif :kernel python3.10-qif
+csfs_ab = pif.compute_csfs(df_ab)
+csfs_ab
+#+end_src
+
+#+RESULTS:
+:       A     B
+: 0  0.25  0.25
+: 1  0.25  0.25
+: 2  0.25  0.25
+: 3  0.25  0.25
+: 4  0.25  0.25
+: 5  0.25  0.25
+: 6  0.25  0.25
+: 7  0.25  0.25
+
+Let A be the sensitive attribute and B the QID known by the adversary.
+Then, we have the follwoing prior and channel:
+
+#+begin_src jupyter-python :session py-qif :kernel python3.10-qif :results scalar
+pi, C = utils.channel.from_data(df_ab, 'A')
+pi
+#+end_src
+
+#+RESULTS:
+: {'a1': 0.5, 'a2': 0.5}
+
+#+begin_src jupyter-python :session py-qif :kernel python3.10-qif :results scalar
+C
+#+end_src
+
+#+RESULTS:
+:       b1    b2
+: a1  0.75  0.25
+: a2  0.25  0.75
+
+and the hyper-distribution (which, coincidentally, is exact the same as the channel):
+
+#+begin_src jupyter-python :session py-qif :kernel python3.10-qif :results scalar
+J = C.apply(lambda p: pi[p.name] * p, axis=1)
+Py = J.apply(np.sum, axis=0)
+hyper = J.apply(lambda p: p / Py[p.name], axis=0)
+hyper
+#+end_src
+
+#+RESULTS:
+:       b1    b2
+: a1  0.75  0.25
+: a2  0.25  0.75
+
+Here are changes in probability without taking the absolute value:
+
+#+begin_src jupyter-python :session py-qif :kernel python3.10-qif :results scalar
+hyper.apply(lambda p: p - pi[p.name], axis=1)
+#+end_src
+
+#+RESULTS:
+:       b1    b2
+: a1  0.25 -0.25
+: a2 -0.25  0.25
+
+Notice that, at the posterior "b1", the change in probability for a1 is 0.25
+and for a2 is -0.25. Yet, the corresponding cells receive the same CSF value:
+0.25. What does this mean???
